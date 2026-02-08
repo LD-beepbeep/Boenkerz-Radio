@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>BoenkerZ App</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- HLS.js -->
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Google Cast SDK -->
+    <script src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1"></script>
+    
+    <!-- Fonts: Rubik -->
+    <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        boenkerz: {
+                            dark: '#2A3466',      
+                            accent: '#AFB94D',    
+                            surface: '#1e2540',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Rubik', 'sans-serif'],
+                    },
+                    animation: {
+                        'marquee': 'marquee 15s linear infinite',
+                        'float': 'float 5s ease-in-out infinite',
+                    },
+                    keyframes: {
+                        marquee: {
+                            '0%': { transform: 'translateX(100%)' },
+                            '100%': { transform: 'translateX(-100%)' },
+                        },
+                        float: {
+                            '0%, 100%': { transform: 'translateY(0)' },
+                            '50%': { transform: 'translateY(-6px)' }, 
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            background-color: #0f1219;
+            color: white;
+            font-family: 'Rubik', sans-serif;
+            overflow-y: auto;
+            overflow-x: hidden;
+            -webkit-tap-highlight-color: transparent;
+            padding-bottom: 120px;
+        }
+
+        .bg-atmosphere {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100vh;
+            background: radial-gradient(circle at 50% -20%, #1a2245 0%, #0f1219 70%);
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        .marquee-container {
+            overflow: hidden;
+            white-space: nowrap;
+            position: relative;
+            mask-image: linear-gradient(to right, transparent, black 10%, black 90%, transparent);
+        }
+        .marquee-content {
+            display: inline-block;
+            padding-left: 100%;
+            animation: marquee 12s linear infinite;
+        }
+        .no-marquee .marquee-content {
+            padding-left: 0;
+            animation: none;
+            display: block;
+            text-align: center;
+        }
+
+        ::-webkit-scrollbar { width: 0px; background: transparent; }
+        
+        /* Smooth transitions (0.3s) voor een premium gevoel */
+        .layout-transition { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .fade-smooth { transition: opacity 0.3s ease-in-out; }
+        
+        .chat-input {
+            width: 100%;
+            background: transparent;
+            border: none;
+            border-bottom: 1px solid #ccc;
+            padding: 8px 0;
+            color: #333;
+            outline: none;
+        }
+        .chat-input:focus { border-bottom: 2px solid #2A3466; }
+    </style>
+</head>
+<body class="antialiased selection:bg-boenkerz-accent selection:text-boenkerz-dark">
+
+    <div class="bg-atmosphere"></div>
+
+    <main class="w-full max-w-lg mx-auto pt-10 px-6 flex flex-col items-center min-h-[80vh] justify-center">
+        
+        <!-- PLAYER CARD -->
+        <div id="player-card" class="relative w-full aspect-square mb-6 group perspective-1000 layout-transition ease-in-out">
+            
+            <!-- VIDEO LAYER -->
+            <div id="video-container" class="hidden absolute inset-0 z-30 flex items-center justify-center bg-black rounded-[2rem] overflow-hidden shadow-2xl border border-white/10">
+                <div id="iframe-wrapper" class="w-full h-full"></div>
+            </div>
+
+            <!-- AUDIO CONTAINER -->
+            <div id="audio-container" class="w-full h-full relative z-20 layout-transition rounded-[2rem] overflow-hidden flex items-center justify-center bg-white/5 border border-white/10 shadow-2xl">
+                
+                <!-- 1. IDLE LOGO (Default Visible) -->
+                <div id="placeholder-logo" class="absolute inset-0 flex items-center justify-center fade-smooth opacity-100 p-4 z-10">
+                    <img src="https://boenkerz.be/wp-content/uploads/2025/06/BoenkerZ_Verticaal-1-scaled-e1750352676340.png" 
+                         class="w-full h-full object-contain drop-shadow-2xl animate-float" 
+                         alt="BoenkerZ Logo">
+                </div>
+
+                <!-- 2. VISUALIZER (Hidden by default) -->
+                <canvas id="visualizer-canvas" class="absolute inset-0 w-full h-full opacity-0 fade-smooth z-0"></canvas>
+                
+                <!-- 3. COVER ART (Hidden by default) -->
+                <img id="cover-art" src="" 
+                     class="absolute inset-0 w-full h-full object-cover opacity-0 fade-smooth z-20" 
+                     alt="Cover">
+                
+                <div id="cover-overlay" class="absolute inset-0 bg-gradient-to-t from-boenkerz-dark/80 via-transparent to-transparent opacity-0 fade-smooth z-20"></div>
+
+            </div>
+        </div>
+
+        <!-- TRACK INFO -->
+        <div id="meta-container" class="w-full px-2 flex flex-col gap-2 layout-transition opacity-0 h-0 overflow-hidden transform translate-y-4">
+            <div class="text-center flex flex-col justify-center">
+                <h3 id="track-artist" class="text-boenkerz-accent text-xs font-black uppercase tracking-[0.2em] mb-1 truncate opacity-90"></h3>
+                <div id="title-container" class="marquee-container h-10 w-full no-marquee relative">
+                    <h2 id="track-title" class="marquee-content text-2xl font-bold text-white leading-tight drop-shadow-md"></h2>
+                    <div class="absolute top-0 left-0 w-6 h-full bg-gradient-to-r from-[#0f1219] to-transparent z-10 pointer-events-none"></div>
+                    <div class="absolute top-0 right-0 w-6 h-full bg-gradient-to-l from-[#0f1219] to-transparent z-10 pointer-events-none"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- CONTROLS -->
+        <div class="w-full flex items-center justify-between px-6 mt-4 layout-transition" id="controls-container">
+            <button id="cast-btn" onclick="toggleCast()" class="w-12 h-12 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition active:scale-95 hidden">
+                <i class="fa-brands fa-chromecast text-lg"></i>
+            </button>
+
+            <button id="mute-btn" onclick="toggleMute()" class="w-12 h-12 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition active:scale-95">
+                <i id="vol-icon" class="fa-solid fa-volume-high text-lg"></i>
+            </button>
+
+            <button onclick="togglePlay()" id="play-btn" class="w-20 h-20 rounded-full bg-boenkerz-accent text-boenkerz-dark flex items-center justify-center text-3xl shadow-[0_0_30px_rgba(175,185,77,0.4)] hover:shadow-[0_0_50px_rgba(175,185,77,0.6)] hover:scale-105 active:scale-95 transition-all duration-200">
+                <i class="fa-solid fa-play ml-1"></i>
+            </button>
+
+            <button onclick="shareTrack()" class="w-12 h-12 flex items-center justify-center rounded-full bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition active:scale-95">
+                <i class="fa-solid fa-share-nodes text-lg"></i>
+            </button>
+        </div>
+        
+    </main>
+
+    <!-- DOCK NAVIGATION -->
+    <div class="fixed bottom-6 left-0 right-0 z-50 flex justify-center px-4">
+        <nav class="bg-[#1e2540]/95 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl flex items-center p-2 gap-2 max-w-[350px] w-full justify-between">
+            <button onclick="switchMode('audio')" id="nav-audio" class="flex-1 h-14 rounded-xl flex flex-col items-center justify-center text-boenkerz-accent bg-white/10 transition-all">
+                <i class="fa-solid fa-headphones text-xl mb-1"></i>
+                <span class="text-[9px] font-bold tracking-wider">RADIO</span>
+            </button>
+            <button onclick="switchMode('video')" id="nav-video" class="flex-1 h-14 rounded-xl flex flex-col items-center justify-center text-white/40 hover:text-white transition-all">
+                <i class="fa-solid fa-tv text-xl mb-1"></i>
+                <span class="text-[9px] font-bold tracking-wider">KIJKEN</span>
+            </button>
+            <button onclick="toggleChat()" id="nav-chat" class="flex-1 h-14 rounded-xl flex flex-col items-center justify-center text-white/40 hover:text-white hover:bg-white/5 transition-all relative">
+                <i class="fa-solid fa-comment-dots text-xl mb-1"></i>
+                <span class="text-[9px] font-bold tracking-wider">CHAT</span>
+                <!-- Badge verwijderd -->
+            </button>
+        </nav>
+    </div>
+
+    <!-- CHAT OVERLAY -->
+    <div id="chat-overlay" class="fixed inset-0 z-[100] hidden flex flex-col justify-end sm:justify-center items-center bg-black/60 backdrop-blur-sm transition-opacity duration-300">
+        <div class="bg-white w-full max-w-sm sm:rounded-2xl rounded-t-3xl overflow-hidden shadow-2xl animate-slide-up h-[85vh] sm:h-auto flex flex-col">
+            <div class="bg-boenkerz-dark p-6 text-white flex justify-between items-start">
+                <div class="flex items-center gap-4">
+                    <div class="relative">
+                        <img src="https://boenkerz.be/wp-content/uploads/2025/06/BoenkerZ_Verticaal-1-scaled-e1750352676340.png" class="w-12 h-12 bg-white rounded-full p-1 object-contain">
+                        <span class="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-boenkerz-dark rounded-full"></span>
+                    </div>
+                    <div>
+                        <h3 class="font-bold text-lg">BoenkerZ Studio</h3>
+                        <p class="text-xs text-white/70">We zijn live! Stuur een berichtje.</p>
+                    </div>
+                </div>
+                <button onclick="toggleChat()" class="text-white/70 hover:text-white">
+                    <i class="fa-solid fa-xmark text-2xl"></i>
+                </button>
+            </div>
+            <div class="p-6 flex-1 bg-white overflow-y-auto">
+                <p class="text-gray-500 text-sm mb-6 text-center">Voer je naam in om live met de studio te chatten!</p>
+                <form onsubmit="startChat(event)" class="space-y-6">
+                    <div class="relative mb-6">
+                        <input type="text" placeholder="Jouw Naam" class="w-full bg-transparent border-b border-gray-300 py-2 focus:border-boenkerz-dark outline-none transition-colors" required>
+                    </div>
+                    <div class="flex items-start gap-3">
+                        <input type="checkbox" id="gdpr" required class="mt-1 accent-boenkerz-dark w-4 h-4">
+                        <label for="gdpr" class="text-xs text-gray-600 leading-relaxed">
+                            Ik ben ready to chat! Ik blijf respectvol, deel geen persoonlijke dingen en snap dat de chat wordt gemonitord.
+                        </label>
+                    </div>
+                    <button type="submit" class="w-full bg-boenkerz-dark text-white font-bold py-4 rounded-xl shadow-lg hover:bg-[#1a2245] transition flex items-center justify-center gap-2">
+                        Chat met de studio! <i class="fa-solid fa-paper-plane"></i>
+                    </button>
+                </form>
+            </div>
+            <div class="bg-gray-50 p-3 text-center text-[10px] text-gray-400 uppercase tracking-widest border-t">
+                Powered by BoenkerZ
+            </div>
+        </div>
+    </div>
+
+    <!-- AUDIO SOURCE -->
+    <audio id="audio-player" preload="none" crossorigin="anonymous" playsinline>
+        <source src="https://altair.streamerr.co:8096/boenkerz" type="audio/mpeg">
+    </audio>
+
+    <script>
+        // CONFIG
+        const videoIframeUrl = 'https://video.boenkerz.be/live-stream-video-widget/boenkerz';
+        const defaultLogo = "https://boenkerz.be/wp-content/uploads/2025/06/BoenkerZ_Verticaal-1-scaled-e1750352676340.png";
+        const metadataApiUrl = "https://corsproxy.io/?https://boenkerz.be/?qtmplayer_json_data=";
+
+        // ELEMENTS
+        const audioPlayer = document.getElementById('audio-player');
+        const playBtn = document.getElementById('play-btn');
+        const volIcon = document.getElementById('vol-icon');
+        const castBtn = document.getElementById('cast-btn');
+        const playerCard = document.getElementById('player-card');
+        const audioContainer = document.getElementById('audio-container');
+        const videoContainer = document.getElementById('video-container');
+        const iframeWrapper = document.getElementById('iframe-wrapper');
+        const canvas = document.getElementById('visualizer-canvas');
+        const ctx = canvas.getContext('2d');
+        const coverArt = document.getElementById('cover-art');
+        const coverOverlay = document.getElementById('cover-overlay');
+        const placeholderLogo = document.getElementById('placeholder-logo');
+        
+        const navAudio = document.getElementById('nav-audio');
+        const navVideo = document.getElementById('nav-video');
+        const chatOverlay = document.getElementById('chat-overlay');
+        const metaContainer = document.getElementById('meta-container');
+        const controlsContainer = document.getElementById('controls-container');
+        const trackTitle = document.getElementById('track-title');
+        const trackArtist = document.getElementById('track-artist');
+        const titleContainer = document.getElementById('title-container');
+
+        let currentMode = 'audio';
+        let isPlaying = false;
+        let animationId;
+        let audioCtx, analyser, source;
+        let dataArray, bufferLength;
+
+        // --- AUDIO SETUP ---
+        function initAudioContext() {
+            if(!audioCtx) {
+                try {
+                    const AudioContext = window.AudioContext || window.webkitAudioContext;
+                    audioCtx = new AudioContext();
+                    analyser = audioCtx.createAnalyser();
+                    analyser.fftSize = 32; 
+                    source = audioCtx.createMediaElementSource(audioPlayer);
+                    source.connect(analyser);
+                    analyser.connect(audioCtx.destination);
+                    bufferLength = analyser.frequencyBinCount;
+                    dataArray = new Uint8Array(bufferLength);
+                } catch(e) {}
+            }
+            if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+        }
+
+        // --- VISUALIZER DRAWING ---
+        function resizeCanvas() {
+            canvas.width = audioContainer.offsetWidth;
+            canvas.height = audioContainer.offsetHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        setTimeout(resizeCanvas, 100);
+
+        function drawVisualizer() {
+            if (!isPlaying || currentMode !== 'audio') {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                return;
+            }
+
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            const bars = 7; 
+            const gap = 20; 
+            const totalWidth = canvas.width * 0.7; 
+            const startX = (canvas.width - totalWidth) / 2;
+            const barWidth = (totalWidth - (bars - 1) * gap) / bars;
+            const centerIdx = 3; 
+
+            let useRealData = false;
+            if(analyser) {
+                analyser.getByteFrequencyData(dataArray);
+                if(dataArray.some(val => val > 0)) useRealData = true;
+            }
+
+            const t = Date.now() / 1000;
+
+            for (let i = 0; i < bars; i++) {
+                let barHeight;
+                const distScale = 1 - (Math.abs(i - centerIdx) * 0.15); 
+
+                if (useRealData) {
+                    // Pak lagere frequenties voor midden (vaak bass)
+                    const index = Math.floor(i * (bufferLength / 12)); 
+                    barHeight = (dataArray[index] / 255) * (canvas.height * 0.8);
+                    barHeight *= distScale;
+                } else {
+                    const speed = 3;
+                    const pulse = Math.sin(t * speed);
+                    const variation = Math.cos(t * 2.5 + i * 0.5);
+                    barHeight = (Math.abs(pulse) * 0.5 + Math.abs(variation) * 0.5) * (canvas.height * 0.75);
+                    barHeight *= distScale;
+                }
+                
+                barHeight = Math.max(15, barHeight);
+
+                const x = startX + i * (barWidth + gap);
+                const y = (canvas.height - barHeight) / 2;
+
+                ctx.fillStyle = '#AFB94D';
+                ctx.beginPath();
+                ctx.roundRect(x, y, barWidth, barHeight, [12]); 
+                ctx.fill();
+            }
+
+            animationId = requestAnimationFrame(drawVisualizer);
+        }
+
+        // --- CASTING ---
+        if (audioPlayer.remote) {
+            audioPlayer.remote.watchAvailability((available) => {
+                if (available) castBtn.classList.remove('hidden');
+            }).catch(() => {});
+        }
+        function toggleCast() { audioPlayer.remote ? audioPlayer.remote.prompt() : alert("Geen cast-apparaat."); }
+
+        // --- METADATA & UI LOGIC ---
+        async function fetchMetadata() {
+            try {
+                const response = await fetch(`${metadataApiUrl}&t=${new Date().getTime()}`);
+                const data = await response.json();
+                
+                if (data.contents) {
+                    const parser = new DOMParser();
+                    const doc = parser.parseFromString(data.contents, "text/html");
+                    const titleEl = doc.querySelector('.qtmplayer__title .marquee') || doc.querySelector('.qtmplayer__title');
+                    const artistEl = doc.querySelector('.qtmplayer__artist .marquee') || doc.querySelector('.qtmplayer__artist');
+                    const coverEl = doc.querySelector('.qtmplayer__cover img');
+
+                    const newTitle = titleEl ? titleEl.innerText.trim() : "";
+                    const newArtist = artistEl ? artistEl.innerText.trim() : "";
+                    const newCover = coverEl ? coverEl.src : "";
+
+                    if(newTitle && newTitle !== "BoenkerZ" && newTitle !== "Radio") {
+                        updateDisplay(newArtist, newTitle, newCover, true);
+                    } else {
+                        updateDisplay("", "", "", false);
+                    }
+                }
+            } catch (error) { updateDisplay("", "", "", false); }
+        }
+
+        function updateDisplay(artist, title, coverUrl, hasData) {
+            // UI Controls Layout
+            if(hasData) {
+                metaContainer.classList.remove('opacity-0', 'h-0', 'translate-y-4');
+                metaContainer.classList.add('opacity-100', 'h-auto', 'translate-y-0');
+                controlsContainer.classList.add('mt-4');
+                if(trackTitle.innerText !== title) trackTitle.innerText = title;
+                if(trackArtist.innerText !== artist) trackArtist.innerText = artist;
+                checkMarquee();
+            } else {
+                metaContainer.classList.add('opacity-0', 'h-0', 'translate-y-4');
+                metaContainer.classList.remove('opacity-100', 'h-auto', 'translate-y-0');
+                controlsContainer.classList.remove('mt-4');
+            }
+
+            // Visuals Switch: Logo vs Cover vs Visualizer
+            // Priority:
+            // 1. Niet spelen? -> LOGO
+            // 2. Wel spelen + Geen Cover? -> VISUALIZER
+            // 3. Wel spelen + Wel Cover? -> COVER
+            
+            if(!isPlaying) {
+                // Toon Logo
+                placeholderLogo.classList.remove('opacity-0');
+                placeholderLogo.classList.add('opacity-100');
+                canvas.classList.add('opacity-0');
+                coverArt.classList.add('opacity-0');
+                coverOverlay.classList.add('opacity-0');
+            } else {
+                // Verberg Logo
+                placeholderLogo.classList.remove('opacity-100');
+                placeholderLogo.classList.add('opacity-0');
+
+                if (hasData && coverUrl && coverUrl.length > 5) {
+                    // Toon Cover
+                    if(coverArt.src !== coverUrl) coverArt.src = coverUrl;
+                    coverArt.classList.remove('opacity-0');
+                    coverArt.classList.add('opacity-100');
+                    coverOverlay.classList.remove('opacity-0');
+                    coverOverlay.classList.add('opacity-100');
+                    canvas.classList.add('opacity-0');
+                } else {
+                    // Toon Visualizer
+                    coverArt.classList.add('opacity-0');
+                    coverOverlay.classList.add('opacity-0');
+                    canvas.classList.remove('opacity-0'); // Fade in viz
+                }
+            }
+
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.metadata = new MediaMetadata({
+                    title: hasData ? title : "BoenkerZ Live",
+                    artist: hasData ? artist : "BoenkerZ Radio",
+                    artwork: [{ src: (hasData && coverUrl) ? coverUrl : defaultLogo }]
+                });
+            }
+        }
+
+        setInterval(fetchMetadata, 8000); 
+        fetchMetadata(); 
+
+        function checkMarquee() {
+            if(trackTitle.innerText.length > 20) {
+                titleContainer.classList.remove('no-marquee');
+                trackTitle.classList.add('marquee-content');
+            } else {
+                titleContainer.classList.add('no-marquee');
+                trackTitle.classList.remove('marquee-content');
+            }
+        }
+
+        // --- PLAY CONTROL ---
+        function togglePlay() {
+            if (currentMode === 'audio') {
+                initAudioContext();
+                if (audioPlayer.paused) {
+                    audioPlayer.play().catch(e => console.log(e));
+                    updatePlayUI(true);
+                    fetchMetadata(); 
+                } else {
+                    audioPlayer.pause();
+                    updatePlayUI(false);
+                    // Directe UI update aanroepen om logo direct te tonen
+                    // We geven dummy data mee om de logica in updateDisplay te triggeren voor 'paused' state
+                    // We moeten weten of er metadata was om de layout (hoog/laag) te behouden, 
+                    // maar dat regelt fetchMetadata ook. Voor instant respons op logo:
+                    placeholderLogo.classList.remove('opacity-0');
+                    placeholderLogo.classList.add('opacity-100');
+                    canvas.classList.add('opacity-0');
+                    coverArt.classList.add('opacity-0');
+                    coverOverlay.classList.add('opacity-0');
+                }
+            } else {
+                if(iframeWrapper.innerHTML === '') {
+                     iframeWrapper.innerHTML = `<iframe src="${videoIframeUrl}" style="width:100%; height:100%; border:none;" allowfullscreen></iframe>`;
+                     updatePlayUI(true);
+                } else {
+                    iframeWrapper.innerHTML = '';
+                    updatePlayUI(false);
+                }
+            }
+        }
+
+        function updatePlayUI(active) {
+            isPlaying = active;
+            if (active) {
+                playBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
+                playBtn.classList.add('animate-pulse-glow', 'bg-white', 'text-boenkerz-dark');
+                playBtn.classList.remove('bg-boenkerz-accent');
+                if(currentMode === 'audio') { resizeCanvas(); drawVisualizer(); }
+                if ('mediaSession' in navigator) navigator.mediaSession.playbackState = "playing";
+            } else {
+                playBtn.innerHTML = '<i class="fa-solid fa-play ml-1"></i>';
+                playBtn.classList.remove('animate-pulse-glow', 'bg-white', 'text-boenkerz-dark');
+                playBtn.classList.add('bg-boenkerz-accent');
+                if ('mediaSession' in navigator) navigator.mediaSession.playbackState = "paused";
+            }
+        }
+
+        if ('mediaSession' in navigator) {
+            navigator.mediaSession.setActionHandler('play', () => togglePlay());
+            navigator.mediaSession.setActionHandler('pause', () => togglePlay());
+            navigator.mediaSession.setActionHandler('stop', () => togglePlay());
+        }
+
+        function switchMode(mode) {
+            currentMode = mode;
+            audioPlayer.pause();
+            iframeWrapper.innerHTML = ''; 
+            updatePlayUI(false);
+
+            if(mode === 'audio') {
+                videoContainer.classList.add('hidden');
+                audioContainer.classList.remove('hidden');
+                playerCard.classList.remove('aspect-video');
+                playerCard.classList.add('aspect-square');
+                
+                navAudio.classList.add('bg-white/10', 'text-boenkerz-accent');
+                navAudio.classList.remove('text-white/40');
+                navVideo.classList.remove('bg-white/10', 'text-boenkerz-accent');
+                navVideo.classList.add('text-white/40');
+                
+                fetchMetadata(); 
+            } else {
+                videoContainer.classList.remove('hidden');
+                audioContainer.classList.add('hidden');
+                playerCard.classList.remove('aspect-square');
+                playerCard.classList.add('aspect-video');
+
+                navVideo.classList.add('bg-white/10', 'text-boenkerz-accent');
+                navVideo.classList.remove('text-white/40');
+                navAudio.classList.remove('bg-white/10', 'text-boenkerz-accent');
+                navAudio.classList.add('text-white/40');
+                
+                iframeWrapper.innerHTML = `<iframe src="${videoIframeUrl}" style="width:100%; height:100%; border:none;" allowfullscreen></iframe>`;
+                updatePlayUI(true);
+                
+                metaContainer.classList.add('opacity-0', 'h-0');
+                controlsContainer.classList.remove('mt-4');
+            }
+        }
+
+        function toggleChat() {
+            if (chatOverlay.classList.contains('hidden')) {
+                chatOverlay.classList.remove('hidden');
+                document.body.style.overflow = 'hidden';
+            } else {
+                chatOverlay.classList.add('hidden');
+                document.body.style.overflow = 'auto';
+            }
+        }
+
+        function startChat(e) {
+            e.preventDefault();
+            const btn = e.target.querySelector('button');
+            btn.innerHTML = '<i class="fa-solid fa-check"></i> Verbonden!';
+            btn.classList.add('bg-green-600');
+            setTimeout(() => { window.location.href = "https://boenkerz.be/contacts"; }, 1000);
+        }
+
+        function toggleMute() {
+            audioPlayer.muted = !audioPlayer.muted;
+            volIcon.className = audioPlayer.muted ? "fa-solid fa-volume-xmark" : "fa-solid fa-volume-high";
+        }
+
+        async function shareTrack() {
+            const shareData = {
+                title: 'BoenkerZ Radio',
+                text: `Luister naar ${trackArtist.innerText || 'BoenkerZ'} - ${trackTitle.innerText} op BoenkerZ!`,
+                url: "https://boenkerz.be",
+            };
+            if (navigator.share) {
+                try { await navigator.share(shareData); } catch (err) {}
+            } else {
+                try {
+                    await navigator.clipboard.writeText(`Luister naar BoenkerZ: https://boenkerz.be`);
+                    alert("Link gekopieerd!");
+                } catch (err) {}
+            }
+        }
+
+        checkMarquee();
+    </script>
+</body>
+</html>
